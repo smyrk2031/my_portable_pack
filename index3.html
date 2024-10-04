@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>クールなカーナビアプリ</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            font-family: 'Arial', sans-serif;
+        }
+        #container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        #map {
+            flex: 3;
+            width: 100%;
+        }
+        #chart-container {
+            flex: 1;
+            width: 100%;
+            background-color: #f0f0f0;
+        }
+        .cool-title {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(0, 0, 0, 0.7);
+            color: #fff;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 24px;
+            z-index: 1000;
+        }
+        #course-selector {
+            position: absolute;
+            top: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000;
+            background-color: rgba(255, 255, 255, 0.8);
+            padding: 10px;
+            border-radius: 10px;
+        }
+        #sidemenu-toggle {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 1001;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: #fff;
+            padding: 10px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        #sidemenu {
+            position: fixed;
+            left: -250px;
+            top: 0;
+            width: 250px;
+            height: 100%;
+            background-color: #333;
+            color: #fff;
+            transition: 0.3s;
+            z-index: 1000;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        #sidemenu.open {
+            left: 0;
+        }
+        #sidemenu table {
+            width: 100%;
+            margin-top: 50px;
+        }
+        #sidemenu td {
+            padding: 10px 0;
+            border-bottom: 1px solid #555;
+        }
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 34px;
+        }
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 34px;
+        }
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 26px;
+            width: 26px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        input:checked + .slider {
+            background-color: #2196F3;
+        }
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="map"></div>
+        <div id="chart-container">
+            <canvas id="locationChart"></canvas>
+        </div>
+    </div>
+    <div class="cool-title">クールカーナビ</div>
+    <div id="course-selector">
+        <select id="course-dropdown">
+            <option value="nagoya_tour">名古屋駅周辺ツアー</option>
+            <option value="nagoya_to_okazaki">名古屋駅から岡崎駅まで</option>
+        </select>
+    </div>
+    <div id="sidemenu-toggle">☰</div>
+    <div id="sidemenu">
+        <table>
+            <tr><td>ホーム</td></tr>
+            <tr><td>設定</td></tr>
+            <tr><td>お気に入り</td></tr>
+            <tr><td>ヘルプ</td></tr>
+            <tr>
+                <td>
+                    開発者モード
+                    <label class="switch">
+                        <input type="checkbox" id="devModeToggle">
+                        <span class="slider"></span>
+                    </label>
+                </td>
+            </tr>
+        </table>
+    </div>
+
+    <script>
+        // 名古屋駅の座標
+        const nagoyaStation = [35.170915, 136.881537];
+        
+        // 地図の初期化
+        const map = L.map('map').setView(nagoyaStation, 13);
+
+        // OpenStreetMapのタイルレイヤーを追加
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+
+        // 地図のコントロールを左下に配置
+        map.zoomControl.setPosition('bottomleft');
+
+        // ユーザーの位置を表すマーカー
+        let userMarker;
+
+        // ナビコースを表示するレイヤー
+        let courseLayer;
+
+        // グラフの初期化
+        const ctx = document.getElementById('locationChart').getContext('2d');
+        const chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Latitude',
+                    data: [],
+                    borderColor: 'rgb(255, 99, 132)',
+                    tension: 0.1
+                }, {
+                    label: 'Longitude',
+                    data: [],
+                    borderColor: 'rgb(54, 162, 235)',
+                    tension: 0.1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: {
+                    duration: 0
+                },
+                elements: {
+                    line: {
+                        borderWidth: 1
+                    },
+                    point: {
+                        radius: 0
+                    }
+                }
+            }
+        });
+
+        // 位置情報サンプルを保存する配列
+        let positionSamples = [];
+
+        // 位置情報の更新関数
+        function updatePosition(position) {
+            const lat = position.coords.latitude;
+            const lon = position.coords.longitude;
+
+            // サンプルを配列に追加
+            positionSamples.push({lat, lon});
+
+            // グラフを更新
+            const now = new Date();
+            chart.data.labels.push(now.toLocaleTimeString('ja-JP', {hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 1}));
+            chart.data.datasets[0].data.push(lat);
+            chart.data.datasets[1].data.push(lon);
+
+            // 最新の100データポイントのみを表示
+            if (chart.data.labels.length > 100) {
+                chart.data.labels.shift();
+                chart.data.datasets[0].data.shift();
+                chart.data.datasets[1].data.shift();
+            }
+
+            chart.update();
+
+            // 5サンプル（1秒分）たまったら中央値を計算してマーカーを更新
+            if (positionSamples.length >= 5) {
+                const medianLat = median(positionSamples.map(s => s.lat));
+                const medianLon = median(positionSamples.map(s => s.lon));
+
+                if (userMarker) {
+                    userMarker.setLatLng([medianLat, medianLon]);
+                } else {
+                    userMarker = L.marker([medianLat, medianLon]).addTo(map);
+                }
+
+                map.setView([medianLat, medianLon]);
+
+                // サンプル配列をリセット
+                positionSamples = [];
+            }
+        }
+
+        // 中央値を計算する関数
+        function median(values) {
+            const sorted = values.slice().sort((a, b) => a - b);
+            const middle = Math.floor(sorted.length / 2);
+            if (sorted.length % 2 === 0) {
+                return (sorted[middle - 1] + sorted[middle]) / 2;
+            }
+            return sorted[middle];
+        }
+
+        // エラーハンドリング関数
+        function handleError(error) {
+            console.error("位置情報の取得に失敗しました:", error.message);
+        }
+
+        // 位置情報の更新をシミュレートする関数（テスト用）
+        function simulatePositionUpdate() {
+            const lat = 35.170915 + (Math.random() - 0.5) * 0.01;
+            const lon = 136.881537 + (Math.random() - 0.5) * 0.01;
+            updatePosition({ coords: { latitude: lat, longitude: lon } });
+        }
+
+        // 位置情報を定期的に更新する関数
+        function startPositionUpdates() {
+            if ("geolocation" in navigator) {
+                setInterval(() => {
+                    navigator.geolocation.getCurrentPosition(updatePosition, handleError, {
+                        enableHighAccuracy: true,
+                        timeout: 5000,
+                        maximumAge: 0
+                    });
+                }, 200); // 200ミリ秒（0.2秒）ごとに更新
+            } else {
+                alert("お使いのブラウザは位置情報をサポートしていません。シミュレーションモードで動作します。");
+                setInterval(simulatePositionUpdate, 200);
+            }
+        }
+        // 1秒ごとに地図を更新
+        setInterval(() => {
+            if (userMarker) {
+                map.setView(userMarker.getLatLng());
+            }
+        }, 1000);
+
+        // 位置情報の更新を開始
+        startPositionUpdates();
+
+        // ナビコースのGeoJSONデータを読み込む関数（ダミーデータを使用）
+        async function loadCourse(courseName) {
+            // ダミーデータを返す（前回と同じ）
+        }
+
+        // コースを地図上に表示する関数
+        function displayCourse(geoJson) {
+            // 前回と同じ
+        }
+
+        // ドロップダウンの変更イベントを処理
+        document.getElementById('course-dropdown').addEventListener('change', async (event) => {
+            const selectedCourse = event.target.value;
+            const courseData = await loadCourse(selectedCourse);
+            displayCourse(courseData);
+        });
+
+        // 初期コースを読み込む
+        loadCourse('nagoya_tour').then(displayCourse);
+
+        // サイドメニューの切り替え
+        document.getElementById('sidemenu-toggle').addEventListener('click', () => {
+            document.getElementById('sidemenu').classList.toggle('open');
+        });
+
+        // 開発者モードのトグル
+        document.getElementById('devModeToggle').addEventListener('change', (event) => {
+            if (event.target.checked) {
+                console.log("開発者モードがオンになりました");
+                // ここに開発者モードの機能を追加
+            } else {
+                console.log("開発者モードがオフになりました");
+                // ここに開発者モードをオフにする処理を追加
+            }
+        });
+    </script>
+</body>
+</html>
