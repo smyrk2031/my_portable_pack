@@ -1,0 +1,1094 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>クールなカーナビアプリ</title>    
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dexie/3.2.3/dexie.min.js"></script>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            font-family: 'Arial', sans-serif;
+        }
+        #container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        #map {
+            flex: 3;
+            width: 100%;
+        }
+        /* サイドメニューが開いたときのmapの位置 */
+        #map.shifted {
+            margin-left: 250px;  /* サイドメニューの幅 + 余白 */
+            transition: .4s;
+        }
+        #developer-group {
+            flex: 3;
+            width: 100%;
+        }
+        #developer-group.shifted {
+            margin-left: 250px;  /* サイドメニューの幅 + 余白 */
+            transition: .4s;
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            height: 200px; /* 縦幅を50pxに設定 */
+            margin-bottom: 10px; /* 各グラフの間に少しのマージンを追加 */
+        }
+        .cool-title {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(0, 0, 0, 0.7);
+            color: #fff;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 24px;
+            z-index: 1000;
+        }
+        #course-selector {
+            position: absolute;
+            top: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000;
+            background-color: rgba(255, 255, 255, 0.8);
+            padding: 10px;
+            border-radius: 10px;
+        }
+
+        #recenter-button {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1001;
+        }
+
+        #recenter-button button {
+            background-color: #007BFF; /* 背景色をブルーに */
+            color: white; /* 文字色（アイコンの色）を白に */
+            border: none; /* 枠線をなし */
+            padding: 15px;
+            border-radius: 50%; /* 丸い形にする */
+            cursor: pointer;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2); /* ボタンのシャドウ */
+            transition: transform 0.3s ease, box-shadow 0.3s ease; /* ホバー時のトランジション効果 */
+        }
+
+        #recenter-button button:hover {
+            transform: scale(1.1); /* ホバー時に少し大きくする */
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3); /* ホバー時のシャドウを強調 */
+        }
+
+        #recenter-button i {
+            font-size: 20px; /* アイコンサイズ */
+        }
+        #sidemenu-toggle {
+            /*position: absolute;*/
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            z-index: 1001;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: #fff;
+            padding: 10px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        #sidemenu {
+            position: fixed;
+            left: -250px;      /*見えないように隠してるとこ*/
+            top: 0;
+            width: 250px;
+            height: 100%;
+            background-color: #333;
+            color: #fff;
+            transition: 0.3s;
+            z-index: 1000;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        #sidemenu.open {
+            left: 0;
+        }
+        #sidemenu:hover {
+            left: 0;
+        }
+        #sidemenu table {
+            width: 100%;
+            margin-top: 50px;
+        }
+        #sidemenu td {
+            padding: 10px 0;
+            border-bottom: 1px solid #555;
+        }
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 34px;
+        }
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 34px;
+        }
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 26px;
+            width: 26px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        input:checked + .slider {
+            background-color: #2196F3;
+        }
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+        #control-buttons {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000;
+            display: flex;
+            gap: 10px;
+        }
+        #control-buttons button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            border-radius: 5px;
+            background-color: #2196F3;
+            color: white;
+        }
+        #control-buttons button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        #file-upload {
+            display: none;
+        }
+        #upload-label {
+            display: inline-block;
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+        @keyframes blink {
+            0% { opacity: 0; }
+            50% { opacity: 1; }
+            100% { opacity: 0; }
+        }
+        .recording-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            background-color: red;
+            border-radius: 50%;
+            margin-left: 10px;
+            animation: blink 1s infinite;
+        }
+        #button-container {
+            /*position: absolute;*/
+            /*bottom: 0px;*/
+            left: 10%;
+            transform: translateX(20%);
+            display: flex;
+            gap: 15px; /* ボタン間の間隔 */
+            margin: 10px 0;
+            flex-wrap: wrap; /* 小さい画面ではボタンが折り返す */
+        }
+        #button-container button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            border-radius: 5px;
+            background-color: #06b300;
+            color: white;
+        }
+
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="map"></div>
+    </div>
+    <div class="cool-title">クールカーナビ ver0.13<span id="recording-indicator" class="recording-indicator" style="display: none;"></span></div>
+    <div id="course-selector">
+        <select id="course-dropdown">
+            <option value="non_cource"> - </option>
+            <option value="nagoya_tour">名古屋駅周辺ツアー</option>
+            <option value="nagoya_to_okazaki">名古屋駅から岡崎駅まで</option>
+        </select>
+    </div>
+    <div id="sidemenu-toggle">☰</div>
+    <div id="sidemenu">
+        <table>
+            <tr><td>ホーム</td></tr>
+            <tr><td>設定</td></tr>
+            <tr>
+                <td>
+                    スポット表示
+                    <label class="switch">
+                        <input type="checkbox" id="favoriteModeToggle">
+                        <span class="slider"></span>
+                    </label>
+                </td>
+            </tr>
+            <tr><td>ヘルプ</td></tr>
+            <tr>
+                <td>
+                    開発者モード
+                    <label class="switch">
+                        <input type="checkbox" id="devModeToggle">
+                        <span class="slider"></span>
+                    </label>
+                </td>
+            </tr>
+        </table>
+        <br><br><hr>
+        <input type="checkbox" id="pin-checkbox">
+        <label for="pin-checkbox">📌 ピン留め</label>
+    </div>
+
+    <div id="recenter-button">
+        <!--<button>現在地に戻る</button>-->
+        <button><i class="fas fa-location-arrow"></i></button>
+    </div>
+
+    <!-- グラフ -->
+    <div class="developer-group" id="developer-group">
+        <div id="button-container" class="developer-group">
+        <!--<div id="controls developer-group"></div>-->
+            <button id="startplotButton">Start</button>
+            <button id="stopplotButton" disabled>Stop</button>
+            <button id="resetplotButton">Reset</button>
+        </div>
+
+        <div class="chart-container developer-group">
+            <canvas id="latitudeChart"></canvas>
+        </div> 
+        <div class="chart-container developer-group">
+            <canvas id="longitudeChart"></canvas>
+        </div>
+        <div class="chart-container developer-group">
+            <canvas id="speedChart"></canvas>
+        </div>
+    </div>
+
+    <div id="control-buttons">
+        <button id="start-recording">計測開始</button>
+        <button id="stop-recording" disabled>停止</button>
+        <button id="download-route" style="display: none;">ダウンロード</button>
+        <label for="file-upload" id="upload-label">アップロード</label>
+        <input type="file" id="file-upload" accept=".json, .gpx">
+    </div>
+    
+    <script>
+
+        // フラグ初期設定
+        let flg_developer_mode = false  // 開発者モードのフラグ：OFF=false, ON=true
+        let flg_chart_plotting = false  // グラフ描画の更新フラグ：OFF=false, ON=true
+
+        // 名古屋駅の座標
+        const nagoyaStation = [35.170915, 136.881537];
+        
+        // 地図の初期化
+        const map = L.map('map').setView(nagoyaStation, 13);
+
+        // OpenStreetMapのタイルレイヤーを追加
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+
+        // 地図のコントロールを左下に配置
+        map.zoomControl.setPosition('bottomleft');
+
+        // ユーザーの位置を表すマーカー
+        let userMarker;
+
+        // ナビコースを表示するレイヤー
+        //let courseLayer;
+        // 変数定義：コースレイヤーを保持する変数を初期化
+        let courseLayer = null;
+
+        // class=developer-groupの要素すべてを一括で表示/非表示切替える関数
+        function developer_group_visibility(show) {
+            document.querySelectorAll('.developer-group').forEach(element => {
+                element.style.display = show ? 'block' : 'none';
+            });
+        }
+        developer_group_visibility(false);
+
+        let watchId;
+        let prevLat = null;
+        let prevLon = null;
+        let prevTime = null;
+        let isUpdating = false;
+
+        // 緯度グラフの初期化
+        const latitudeCtx = document.getElementById('latitudeChart').getContext('2d');
+        const latitudeChart = new Chart(latitudeCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Latitude',
+                    data: [],
+                    borderColor: 'rgb(255, 99, 132)',
+                    tension: 0.1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: false,
+                        ticks: {
+                            autoSkip: true,
+                        }
+                    }
+                }
+            }
+        });
+
+        // 経度グラフの初期化
+        const longitudeCtx = document.getElementById('longitudeChart').getContext('2d');
+        const longitudeChart = new Chart(longitudeCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Longitude',
+                    data: [],
+                    borderColor: 'rgb(54, 162, 235)',
+                    tension: 0.1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: false,
+                        ticks: {
+                            autoSkip: true,
+                        }
+                    }
+                }
+            }
+        });
+
+        // 移動速度グラフの初期化
+        const speedCtx = document.getElementById('speedChart').getContext('2d');
+        const speedChart = new Chart(speedCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Speed (m/s)',
+                    data: [],
+                    borderColor: 'rgb(75, 192, 192)',
+                    tension: 0.1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: false,
+                        ticks: {
+                            autoSkip: true,
+                        }
+                    }
+                }
+            }
+        });
+
+        // IndexedDBの初期化
+        const db = new Dexie('RouteDatabase');
+        db.version(1).stores({
+            rowdata: '++id, timestamp, latitude, longitude'
+        });
+
+        // ナビコースのGeoJSONデータを読み込む関数
+        async function loadCourse(courseName) {
+            if (courseName === 'uploaded_course') {
+                console.log("選択中のコースは："+courseName)
+                return JSON.parse(localStorage.getItem('uploadedCourse'));
+            } else if (courseName === 'non_cource') {
+                console.log("選択中のコースは：何も指定してないです: "+courseName)
+                return JSON.parse(jsonData_non_cource);
+            } else if (courseName === 'nagoya_to_okazaki') {
+                console.log("選択中のコースは: "+courseName)
+                return JSON.parse(jsonData_nagoya_to_okazaki);
+            } else if (courseName === 'nagoya_tour') {
+                console.log("選択中のコースは："+courseName)
+                // ルートを外部ファイルから取得する場合のコードメモ
+                //const response = await fetch('static/root1.json');
+                //const data = await response.json();
+                return JSON.parse(jsonData_nagoya_tour);
+                return data;
+            }
+        }
+
+        // コースを地図上に表示する関数
+        function displayCourse(geoJson) {
+            // すでに表示されているコースがあれば削除する（これにより別のコースが選択されたときに前の経路を消す）
+            if (courseLayer) {
+                map.removeLayer(courseLayer);
+            }
+
+            // 新しいコースの経路を地図に追加する
+            courseLayer = L.geoJSON(geoJson, {
+                style: {
+                    color: '#3388ff',  // 経路の色
+                    weight: 8,  // 経路の線の太さ
+                    opacity: 0.8  // 経路の透明度
+                }
+            }).addTo(map);
+
+            // 経路全体が表示されるように地図の表示範囲を調整
+            if (courseLayer) {
+                userInteracting = true;
+                map.fitBounds(courseLayer.getBounds());
+            }
+        }
+        
+        // ドロップダウンの変更イベントを処理
+        document.getElementById('course-dropdown').addEventListener('change', async (event) => {
+            const selectedCourse = event.target.value;
+            
+            // コースデータを取得
+            const courseData = await loadCourse(selectedCourse);
+            
+            // コースデータが取得できた場合のみ、地図に表示
+            if (courseData) {
+                displayCourse(courseData);
+                //// スポットを表示
+                //const spotData = document.getElementById('spots').textContent;
+                //displaySpots(spotData);
+            }
+        });
+
+        // 初期コースを読み込む
+        loadCourse('non_cource').then(displayCourse);
+
+        // スポット用のマーカー配列を初期化
+        let spotMarkers = [];
+        // スポットを表示する関数
+        function displaySpots(spotData) {
+            // スポットデータをパース
+            const spots = JSON.parse(spotData).spots;
+
+            // SVGアイコンを作成して埋め込む
+            const greenMarkerIcon = L.divIcon({
+                className: 'green-marker-icon',
+                html: `
+                    <svg xmlns="http://www.w3.org/2000/svg" width="30" height="40" viewBox="0 0 30 40">
+                        <path d="M15 0C7.2 0 0 7.2 0 15c0 8.1 15 25 15 25s15-16.9 15-25c0-7.8-7.2-15-15-15zm0 22c-3.9 0-7-3.1-7-7s3.1-7 7-7 7 3.1 7 7-3.1 7-7 7z" fill="green"/>
+                    </svg>
+                `,
+                iconSize: [30, 40],
+                iconAnchor: [15, 40], // アイコンの下部を基準点に
+            });
+
+            // 各スポットのデータをもとにマーカーを作成し、地図上に追加
+            spots.forEach(spot => {
+                const marker = L.marker(spot.coordinates.reverse(), { icon: greenMarkerIcon }).addTo(map);
+
+                marker.bindPopup(`
+                    <strong>${spot.name}</strong><br>
+                    <img src="${spot.image}" alt="${spot.name}" style="width:100px;height:auto;"><br>
+                    ${spot.description}
+                `);
+
+                // 作成したマーカーを配列に保存
+                spotMarkers.push(marker);
+            });
+        }
+
+        // スポットを非表示にする関数
+        function hideSpots() {
+            // 配列に格納されているすべてのマーカーを地図から削除
+            spotMarkers.forEach(marker => {
+                map.removeLayer(marker);
+            });
+
+            // マーカー配列をクリア
+            spotMarkers = [];
+        }
+
+        // スポットの表示・非表示を切り替える関数
+        let spotsVisible = false;
+        function toggleSpots(spotData) {
+            if (spotsVisible) {
+                hideSpots();  // 現在表示中なら非表示にする
+            } else {
+                displaySpots(spotData);  // 現在非表示なら表示する
+            }
+            spotsVisible = !spotsVisible;  // 表示状態を切り替え
+        }
+    
+
+        //// スポットを地図上に表示する関数
+        //function displaySpots(spotData) {
+        //    const spots = JSON.parse(spotData).spots;
+
+        //    // SVGアイコンを作成して埋め込む
+        //    const greenMarkerIcon = L.divIcon({
+        //        className: 'green-marker-icon',
+        //        html: `
+        //            <svg xmlns="http://www.w3.org/2000/svg" width="30" height="40" viewBox="0 0 30 40">
+        //                <path d="M15 0C7.2 0 0 7.2 0 15c0 8.1 15 25 15 25s15-16.9 15-25c0-7.8-7.2-15-15-15zm0 22c-3.9 0-7-3.1-7-7s3.1-7 7-7 7 3.1 7 7-3.1 7-7 7z" fill="green"/>
+        //            </svg>
+        //        `,
+        //        iconSize: [30, 40],
+        //        iconAnchor: [15, 40], // アイコンの下部を基準点に
+        //    });
+
+        //    spots.forEach(spot => {
+        //        //const marker = L.marker(spot.coordinates.reverse()).addTo(map);
+        //        const marker = L.marker(spot.coordinates.reverse(), { icon: greenMarkerIcon }).addTo(map);
+
+        //        marker.bindPopup(`
+        //            <strong>${spot.name}</strong><br>
+        //            <img src="${spot.image}" alt="${spot.name}" style="width:100px;height:auto;"><br>
+        //            ${spot.description}
+        //        `);
+        //    });
+        //}
+
+
+
+        // ユーザーが地図を操作しているかどうかのフラグ（現在地ボタンが押されるまでfalseに戻らない）
+        let userInteracting = false;
+
+        // マーカーピンにSVGアイコンを作成して埋め込む
+        const simpleArrowIcon = L.divIcon({
+            className: 'simple-arrow-icon',
+            html: `
+                <svg xmlns="http://www.w3.org/2000/svg" width="50" height="50" viewBox="0 0 100 100">
+                    <polygon points="50,10 10,90 50,70 90,90" fill="#2A66F0" stroke="#000" stroke-width="1"/>
+                </svg>
+            `,
+            iconSize: [50, 50],
+            iconAnchor: [25, 50],
+            popupAnchor: [0, -50],
+        });
+
+        // 位置情報の更新関数
+        async function updatePosition(position) {
+            const lat = position.coords.latitude;
+            const lon = position.coords.longitude;
+            //console.log("func:updatePosition run. " + lat + ", " + lon);
+            
+            // マーカピンの位置を更新
+            if (userMarker) {
+                userMarker.setLatLng([lat, lon]);
+            } else {
+                //userMarker = L.marker([lat, lon]).addTo(map);
+                userMarker = L.marker([lat, lon], { icon: simpleArrowIcon }).addTo(map);
+            }
+
+            // ユーザが地図操作中の場合は、マーカピンを画面中心に補正する処理をしない
+            if (!userInteracting) {
+                map.setView([lat, lon]);
+            }
+
+            if (flg_chart_plotting) {
+                console.log("グラフを更新")
+                const now = new Date();
+                const timeNow = now.getTime();
+
+                latitudeChart.data.labels.push(now.toLocaleTimeString());
+                latitudeChart.data.datasets[0].data.push(lat);
+                
+                longitudeChart.data.labels.push(now.toLocaleTimeString());
+                longitudeChart.data.datasets[0].data.push(lon);
+
+                // 移動速度を計算
+                let speed = 0;
+                if (prevLat !== null && prevLon !== null && prevTime !== null) {
+                    const distance = getDistanceFromLatLon(prevLat, prevLon, lat, lon);
+                    const timeElapsed = (timeNow - prevTime) / 1000; // 秒
+                    speed = distance / timeElapsed;
+                }
+                prevLat = lat;
+                prevLon = lon;
+                prevTime = timeNow;
+
+                // 移動速度グラフの更新
+                speedChart.data.labels.push(now.toLocaleTimeString());
+                speedChart.data.datasets[0].data.push(speed);
+
+                // グラフ描画実行
+                //if (flg_chart_plotting) {
+                [latitudeChart, longitudeChart, speedChart].forEach(chart => {
+                    // 最新の20データポイントのみを表示
+                    //if (chart.data.labels.length > 200) {
+                    //    chart.data.labels.shift();
+                    //    chart.data.datasets[0].data.shift();
+                    //}
+                    chart.update();
+                })
+            };
+
+            // 計測中の場合、位置情報をIndexedDBに保存
+            // 追加したい機能：停止中は保存しないなどしたい。移動量が一定以上でない場合は何もしないなど。
+            if (isRecording) {
+                await db.rowdata.add({
+                    timestamp: now.getTime(),
+                    latitude: lat,
+                    longitude: lon
+                });
+            }
+        }
+
+        // グラフ描画の開始/停止ボタンのイベントリスナーを設定：開発者モード限定の機能
+        document.getElementById('startplotButton').addEventListener('click', () => {
+            flg_chart_plotting = true;
+            document.getElementById('startplotButton').disabled = true;
+            document.getElementById('stopplotButton').disabled = false;
+        });
+        document.getElementById('stopplotButton').addEventListener('click', () => {
+            flg_chart_plotting = false;
+            document.getElementById('startplotButton').disabled = false;
+            document.getElementById('stopplotButton').disabled = true;
+        });
+        document.getElementById('resetplotButton').addEventListener('click', () => {
+            // ラベルとデータを空に設定
+            [latitudeChart, longitudeChart, speedChart].forEach(chart => {
+                chart.data.labels = [];  // ラベルを空にする
+                chart.data.datasets.forEach(dataset => {
+                    dataset.data = [];   // 各データセットのデータを空にする
+                });
+                // グラフを更新してリセットを反映
+                chart.update();
+            })
+        });
+
+        // 緯度経度からの距離計算
+        function getDistanceFromLatLon(lat1, lon1, lat2, lon2) {
+            const R = 6371000; // 地球の半径（メートル）
+            const dLat = deg2rad(lat2 - lat1);
+            const dLon = deg2rad(lon2 - lon1);
+            const a =
+                Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
+                Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            return R * c; // 距離（メートル）
+        }
+
+        function deg2rad(deg) {
+            return deg * (Math.PI / 180);
+        }
+
+        // エラーハンドリング関数
+        function handleError(error) {
+            console.error("位置情報の取得に失敗しました:", error.message);
+        }
+
+        const mapElement = document.getElementById('map');
+        const graphElement = document.getElementById('developer-group');
+        // メニューが開いたとき、メインコンテンツを横にずらす
+        function updateMainContent() {
+            console.log("updateMainContent");
+            if (sidemenu.classList.contains('open')) {
+                mapElement.classList.add('shifted');
+                graphElement.classList.add('shifted');
+            } else {
+                mapElement.classList.remove('shifted');
+                graphElement.classList.remove('shifted');
+            }
+        }
+
+        // サイドメニュー関連
+        const sidemenu_toggle = document.getElementById('sidemenu-toggle');
+        const sidemenu = document.getElementById('sidemenu');
+        const pinCheckbox = document.getElementById('pin-checkbox');
+        let isPinned = false;
+        console.log("isPinned: "+isPinned)
+
+        // サイドメニューの切り替え
+        // トグルクリックで開く
+        sidemenu_toggle.addEventListener('click', () => {
+            sidemenu.classList.toggle('open');
+            updateMainContent();
+        });
+        // サイドメニューをホバーしたときに開く
+        sidemenu_toggle.addEventListener('mouseenter', () => {
+            sidemenu.classList.add('open');
+            updateMainContent();
+        });
+
+        // サイドメニューからマウスが離れたときに閉じる
+        sidemenu_toggle.addEventListener('mouseleave', () => {
+            if (!isPinned) {
+                sidemenu.classList.remove('open');
+            }
+            updateMainContent();
+        });
+        // メニューの外側をクリックしたときに自動で閉じる
+        document.addEventListener('click', (event) => {
+            if (!isPinned && sidemenu.classList.contains('open')) {
+                // クリックされた要素がメニューでもトグルボタンでもない場合
+                if (!sidemenu.contains(event.target) && !toggleButton.contains(event.target)) {
+                    sidemenu.classList.remove('open');
+                    updateMainContent();
+                }
+            }
+        });
+
+        // ピン留めチェックボックスの変更を監視
+        pinCheckbox.addEventListener('change', () => {
+            isPinned = pinCheckbox.checked;
+        });
+        
+        // お気に入りモードのトグル
+        document.getElementById('favoriteModeToggle').addEventListener('change', (event) => {
+            if (event.target.checked) {
+                console.log("お気に入りモードがオンになりました");
+                // お気に入りスポットの表示
+                // スポットを表示
+                //const spotData = document.getElementById('spots').textContent;
+                toggleSpots(spotData);
+            } else {
+                console.log("お気に入りモードがオフになりました");
+                // お気に入りスポットの非表示
+                //const spotData = document.getElementById('spots').textContent;
+                toggleSpots(spotData);
+            }
+        });
+        // 開発者モードのトグル
+        document.getElementById('devModeToggle').addEventListener('change', (event) => {
+            if (event.target.checked) {
+                console.log("開発者モードがオンになりました");
+                developer_mode = true;
+                document.getElementById('startplotButton').disabled = false;
+                document.getElementById('stopplotButton').disabled = true;
+                developer_group_visibility(true);
+            } else {
+                console.log("開発者モードがオフになりました");
+                developer_mode = false;
+                flg_chart_plotting = false;
+                developer_group_visibility(false);
+            }
+        });
+
+        // ユーザーの地図操作を検出
+        map.on('dragstart', () => {
+            userInteracting = true;
+        });
+        map.on('dragend', () => {
+            setTimeout(() => {
+                userInteracting = true;
+            }, 1000);
+        });
+
+        // 現在地に戻るボタンの機能
+        document.getElementById('recenter-button').addEventListener('click', () => {
+            if (userMarker) {
+                map.setView(userMarker.getLatLng(), map.getZoom());
+                userInteracting = false;
+            }
+        });
+
+        // 計測状態を管理するフラグ
+        let isRecording = false;
+
+        // 計測開始ボタンのイベントリスナー
+        document.getElementById('start-recording').addEventListener('click', () => {
+            isRecording = true;
+            document.getElementById('start-recording').disabled = true;
+            document.getElementById('stop-recording').disabled = false;
+            document.getElementById('recording-indicator').style.display = 'inline-block';
+        });
+
+        // 停止ボタンのイベントリスナー
+        document.getElementById('stop-recording').addEventListener('click', () => {
+            isRecording = false;
+            document.getElementById('start-recording').disabled = false;
+            document.getElementById('stop-recording').disabled = true;
+            document.getElementById('recording-indicator').style.display = 'none';
+            document.getElementById('download-route').style.display = 'inline-block';
+        });
+
+        // ダウンロードボタンのイベントリスナー
+        document.getElementById('download-route').addEventListener('click', async () => {
+            // DBから経路データを取得
+            const routeData = await db.rowdata.toArray();
+            const format = prompt("保存形式を選択してください (json または gpx)", "gpx").toLowerCase();
+
+            // GeoJSON フォーマットを生成
+            if (format === 'json') {
+                const geoJson = {
+                    type: "FeatureCollection",
+                    features: [{
+                        type: "Feature",
+                        properties: {},
+                        geometry: {
+                            type: "LineString",
+                            coordinates: routeData.map(point => [point.longitude, point.latitude])
+                        }
+                    }]
+                };
+                const blob = new Blob([JSON.stringify(geoJson)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                downloadFile(url, 'recorded_route.json');
+            } 
+            // GPX フォーマットを生成
+            else if (format === 'gpx') {
+                const gpxData = `<?xml version="1.0" encoding="UTF-8"?>
+        <gpx version="1.1" creator="MyApp" xmlns="http://www.topografix.com/GPX/1/1">
+        <trk>
+            <name>Recorded Route</name>
+            <trkseg>
+            ${routeData.map(point => `<trkpt lat="${point.latitude}" lon="${point.longitude}">
+                <ele>${point.elevation || 0}</ele>
+                <time>${new Date(point.timestamp).toISOString()}</time>
+            </trkpt>`).join('')}
+            </trkseg>
+        </trk>
+        </gpx>`;
+                const blob = new Blob([gpxData], { type: 'application/gpx+xml' });
+                const url = URL.createObjectURL(blob);
+                downloadFile(url, 'recorded_route.gpx');
+            } else {
+                alert("無効な形式です。'json' または 'gpx' を入力してください。");
+            }
+        });
+
+        // ファイルをダウンロードする関数
+        function downloadFile(url, filename) {
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        // ファイルアップロードのイベントリスナー
+        document.getElementById('file-upload').addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const fileExtension = file.name.split('.').pop().toLowerCase();
+                    
+                    if (fileExtension === 'json') {
+                        // JSONファイルを読み込む
+                        const uploadedCourse = JSON.parse(e.target.result);
+                        localStorage.setItem('uploadedCourse', JSON.stringify(uploadedCourse));
+                        addCourseOption('uploaded_course', 'アップロードしたコース');
+                        displayCourse(uploadedCourse);
+                    } else if (fileExtension === 'gpx') {
+                        // GPXファイルを読み込む
+                        const parser = new DOMParser();
+                        const xmlDoc = parser.parseFromString(e.target.result, 'application/xml');
+                        const coordinates = [];
+                        
+                        // GPX内の<trkpt>タグをすべて取得
+                        const trkpts = xmlDoc.getElementsByTagName('trkpt');
+                        for (let i = 0; i < trkpts.length; i++) {
+                            const lat = parseFloat(trkpts[i].getAttribute('lat'));
+                            const lon = parseFloat(trkpts[i].getAttribute('lon'));
+                            coordinates.push([lon, lat]);  // GeoJSON 形式に合わせて [経度, 緯度] の順に変換
+                        }
+
+                        // GPXデータをGeoJSON形式に変換
+                        const gpxCourse = {
+                            type: "FeatureCollection",
+                            features: [{
+                                type: "Feature",
+                                properties: {},
+                                geometry: {
+                                    type: "LineString",
+                                    coordinates: coordinates
+                                }
+                            }]
+                        };
+                        localStorage.setItem('uploadedCourse', JSON.stringify(gpxCourse));
+                        addCourseOption('uploaded_course', 'アップロードしたコース');
+                        displayCourse(gpxCourse);
+                    } else {
+                        alert('対応していないファイル形式です。JSONまたはGPXファイルをアップロードしてください。');
+                    }
+                };
+                reader.readAsText(file);
+            }
+        });
+        // ドロップダウンにコースオプションを追加する関数
+        function addCourseOption(value, text) {
+            const option = document.createElement('option');
+            option.value = value;
+            option.textContent = text;
+            document.getElementById('course-dropdown').appendChild(option);
+            document.getElementById('course-dropdown').value = value;
+        }
+
+        // 位置情報の監視を開始
+        function getposition() {
+            //console.log("位置情報の監視")
+            if ("geolocation" in navigator) {
+                //getCurrentPosition, watchPosition
+                navigator.geolocation.getCurrentPosition(updatePosition, handleError, {
+                    enableHighAccuracy: true,
+                    timeout: 2000,
+                    maximumAge: 0
+                });
+            } else {
+                alert("お使いのブラウザは位置情報をサポートしていません。");
+            }
+        }
+
+        // 1秒ごとに地図を更新
+        setInterval(() => {
+            getposition()
+            if (userMarker) {
+                // ユーザが地図操作中の場合はピンを中心にする処理をしない
+                if (!userInteracting) {
+                    map.setView(userMarker.getLatLng());
+                }
+            }
+        }, 200);
+    </script>
+
+    <!-- 経路データ_サンプル -->
+    <script id="non_cource" type="application/json">
+        {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "LineString",
+                        "coordinates": [
+                        ]
+                    },
+                    "properties": {
+                        "name": "non_cource"
+                    }
+                }
+            ]
+        }
+    </script>
+    <script id="nagoya_to_okazaki" type="application/json">
+        {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "LineString",
+                        "coordinates": [
+                            [136.9066, 35.1802],
+                            [137.0489, 34.9637]
+                        ]
+                    },
+                    "properties": {
+                        "name": "名古屋から岡崎"
+                    }
+                }
+            ]
+        }
+    </script>
+    <script id="nagoya_tour" type="application/json">
+        {
+            "type":"FeatureCollection",
+            "features":[
+                {
+                    "type":"Feature",
+                    "properties":{},
+                    "geometry":{
+                        "type":"LineString",
+                        "coordinates":[
+                            [136.884572, 35.171330],
+                            [136.889877, 35.172177],
+                            [136.897045, 35.172977],
+                            [136.903609, 35.173441],
+                            [136.906234, 35.173662],
+                            [136.905793, 35.178060],
+                            [136.905229, 35.181907],
+                            [136.904786, 35.184613],
+                            [136.902525, 35.184607],
+                            [136.899720, 35.184329]
+                        ]
+                    }
+                }
+            ]
+        }
+    </script>
+
+    <!-- スポットデータ -->
+    <script id="spots" type="application/json">
+        {
+            "spots": [
+                {
+                    "name": "名古屋城",
+                    "coordinates": [136.8999, 35.1852],
+                    "description": "名古屋の象徴的な城です。",
+                    "image": "path/to/nagoyajo.jpg"
+                },
+                {
+                    "name": "岡崎城",
+                    "coordinates": [137.0622, 34.9667],
+                    "description": "岡崎の歴史的な城です。",
+                    "image": "path/to/okazakijo.jpg"
+                },
+                {
+                    "name": "大須観音",
+                    "coordinates": [136.9053, 35.1671],
+                    "description": "名古屋の有名な寺院です。",
+                    "image": "path/to/osu_kannon.jpg"
+                }
+            ]
+        }
+    </script>
+    <script>
+        // 経路情報のデータ定義
+        const jsonData_non_cource = document.getElementById('non_cource').textContent;
+        const jsonData_nagoya_tour = document.getElementById('nagoya_tour').textContent;
+        const jsonData_nagoya_to_okazaki = document.getElementById('nagoya_to_okazaki').textContent;
+        // スポット情報のデータ定義
+        const spotData = document.getElementById('spots').textContent;
+    </script>
+    
+</body>
+</html>
