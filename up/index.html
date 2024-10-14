@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>時系列データ分析アプリ</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>時系列データ分析アプリ</h1>
+        <div class="controls">
+            <label for="waveform-select">波形を選択:</label>
+            <select id="waveform-select">
+                <option value="A">波形A</option>
+                <option value="B">波形B</option>
+            </select>
+            <label for="sample-size">サンプルサイズ:</label>
+            <input type="number" id="sample-size" value="10" min="1">
+        </div>
+        <div class="toggles">
+            <label><input type="checkbox" id="moving-average"> 移動平均</label>
+            <label><input type="checkbox" id="moving-variance"> 移動分散</label>
+            <label><input type="checkbox" id="sample-difference"> サンプル間差分</label>
+            <label><input type="checkbox" id="moving-max"> 移動最大値</label>
+            <label><input type="checkbox" id="moving-min"> 移動最小値</label>
+        </div>
+        <canvas id="waveform-chart"></canvas>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom"></script>
+    <script src="app.js"></script>
+</body>
+</html>
